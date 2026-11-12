@@ -12,7 +12,7 @@ logging module (`Diagnostics`) it and other packages share.
 ## Install
 
 ```swift
-.package(url: "https://github.com/maazsurti/Networking.git", from: "1.0.0")
+.package(url: "https://github.com/maazsurti/Networking.git", from: "1.1.0")
 ```
 
 ## Use
