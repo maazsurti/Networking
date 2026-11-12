@@ -20,6 +20,7 @@ public protocol GenericAPI {
     /// `false` makes every request fail before it leaves the process. Debug
     /// builds run entirely on mock services and never call the backend.
     var allowsNetworkAccess: Bool { get }
+    var codedErrors: Set<String> { get }
     func request<T: Codable>(
         type: T.Type,
         payload: (any Codable)?,
@@ -45,6 +46,8 @@ public extension GenericAPI {
 
     /// Conformers that don't opt out may reach the backend.
     var allowsNetworkAccess: Bool { true }
+
+    var codedErrors: Set<String> { [] }
 }
 
 extension GenericAPI {
@@ -197,7 +200,7 @@ extension GenericAPI {
                 throw APIError.serverMessage(description: networkErrorMessage)
             }
 
-            if let error = serverError(data: data, statusCode: httpResponse.statusCode) {
+            if let error = serverError(data: data, statusCode: httpResponse.statusCode, codedErrors: codedErrors) {
                 throw error
             }
 
@@ -314,7 +317,7 @@ extension GenericAPI {
             throw APIError.serverMessage(description: networkErrorMessage)
         }
 
-        if let error = serverError(data: data, statusCode: httpResponse.statusCode) {
+        if let error = serverError(data: data, statusCode: httpResponse.statusCode, codedErrors: codedErrors) {
             throw error
         }
 
@@ -364,19 +367,22 @@ public final class Network: GenericAPI {
     public let headers: NetworkHeaderProvider
     public var onUnauthorized: @Sendable () -> Void
     public let allowsNetworkAccess: Bool
+    public let codedErrors: Set<String>
 
     public init(
         baseURL: String,
         configuration: URLSessionConfiguration,
         headers: NetworkHeaderProvider = .neutral,
         onUnauthorized: @escaping @Sendable () -> Void = {},
-        allowsNetworkAccess: Bool = true
+        allowsNetworkAccess: Bool = true,
+        codedErrors: Set<String> = []
     ) {
         self.baseURL = baseURL
         self.session = URLSession(configuration: configuration)
         self.headers = headers
         self.onUnauthorized = onUnauthorized
         self.allowsNetworkAccess = allowsNetworkAccess
+        self.codedErrors = codedErrors
     }
 }
 
@@ -407,7 +413,7 @@ extension Dictionary {
 /// ``APIError/validationErrors`` so the caller can surface one message per
 /// failing field. Otherwise the backend `message` is used, falling back through
 /// the logical-failure checks for non-4xx envelopes.
-private func serverError(data: Data, statusCode: Int) -> APIError? {
+private func serverError(data: Data, statusCode: Int, codedErrors: Set<String>) -> APIError? {
     guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
 
     if statusCode >= 400, let errors = object["errors"] as? [String: Any], !errors.isEmpty {
@@ -428,6 +434,9 @@ private func serverError(data: Data, statusCode: Int) -> APIError? {
     }
 
     if statusCode >= 400 {
+        if let code = object["code"] as? String, codedErrors.contains(code) {
+            return .coded(code: code, description: message)
+        }
         return .serverMessage(description: message)
     }
 
@@ -455,6 +464,7 @@ public enum APIError: Error {
     case invalidURL
     case responseUnsuccessful(description: String)
     case serverMessage(description: String)
+    case coded(code: String, description: String)
     case validationErrors([String])
     case jsonConversionFailure(description: String)
     case jsonParsingFailure
@@ -469,6 +479,7 @@ public enum APIError: Error {
         case .invalidURL: return "Invalid URL"
         case let .responseUnsuccessful(description): return "Unsuccessful: \(description)"
         case let .serverMessage(description): return description
+        case let .coded(_, description): return description
         case let .validationErrors(messages): return messages.joined(separator: "\n")
         case let .jsonConversionFailure(description): return "JSON Conversion Failure: \(description)"
         case .jsonParsingFailure: return "JSON Parsing Failure"

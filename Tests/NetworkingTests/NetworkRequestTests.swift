@@ -96,7 +96,50 @@ struct NetworkRequestTests {
         }
     }
 
-    private func makeNetwork(baseURL: String, authToken: String, xToken: String) -> Network {
+    @Test func namedBackendCodeBecomesCodedError() async throws {
+        RequestCaptureURLProtocol.responseData = Data(#"{"code":"CART_ITEM_UNAVAILABLE","message":"Item sold out"}"#.utf8)
+        defer {
+            RequestCaptureURLProtocol.statusCode = 200
+            RequestCaptureURLProtocol.responseData = Data("{}".utf8)
+        }
+        let network = makeNetwork(
+            baseURL: "https://example.com/api", authToken: "", xToken: "",
+            codedErrors: ["CART_ITEM_UNAVAILABLE"]
+        )
+        RequestCaptureURLProtocol.statusCode = 409
+
+        do {
+            _ = try await network.request(type: EmptyNetworkResponse.self, path: "cart/checkout")
+            Issue.record("Expected a coded error")
+        } catch APIError.coded(let code, let description) {
+            #expect(code == "CART_ITEM_UNAVAILABLE")
+            #expect(description == "Item sold out")
+        }
+    }
+
+    @Test func unnamedBackendCodeStaysServerMessage() async throws {
+        RequestCaptureURLProtocol.responseData = Data(#"{"code":"CART_ITEM_UNAVAILABLE","message":"Item sold out"}"#.utf8)
+        defer {
+            RequestCaptureURLProtocol.statusCode = 200
+            RequestCaptureURLProtocol.responseData = Data("{}".utf8)
+        }
+        let network = makeNetwork(baseURL: "https://example.com/api", authToken: "", xToken: "")
+        RequestCaptureURLProtocol.statusCode = 409
+
+        do {
+            _ = try await network.request(type: EmptyNetworkResponse.self, path: "cart/checkout")
+            Issue.record("Expected a server message")
+        } catch APIError.serverMessage(let description) {
+            #expect(description == "Item sold out")
+        }
+    }
+
+    private func makeNetwork(
+        baseURL: String,
+        authToken: String,
+        xToken: String,
+        codedErrors: Set<String> = []
+    ) -> Network {
         RequestCaptureURLProtocol.lastRequest = nil
         RequestCaptureURLProtocol.requests = []
         RequestCaptureURLProtocol.statusCode = 200
@@ -110,7 +153,8 @@ struct NetworkRequestTests {
                 authToken: { authToken },
                 xToken: { xToken },
                 previewAuthToken: { nil }
-            )
+            ),
+            codedErrors: codedErrors
         )
     }
 }

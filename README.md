@@ -67,6 +67,9 @@ extension GenericAPI {
   field, also on `validationMessages`), a backend `message` becomes `.serverMessage`, and a 5xx
   becomes a generic message. A 2xx body whose `success` is `0`/`false` or whose `status` is
   `error`/`failed` is treated as a failure too.
+- `codedErrors: ["CART_ITEM_UNAVAILABLE"]` turns a 4xx whose body `code` is in the set into
+  `.coded(code:description:)`, for failures the app reacts to rather than only shows. Codes not in
+  the set stay `.serverMessage`.
 - `allowsNetworkAccess: false` fails every request before it leaves the process, for builds that
   must run on mocks.
 
